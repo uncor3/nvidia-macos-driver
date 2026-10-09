@@ -14,7 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUST_VERSION: 1.87.0
+  # uefi 0.41.0 and uefi-macros 0.20.0 require Rust 1.91 or newer.
+  RUST_VERSION: 1.91.1
   VULKAN_HEADERS_COMMIT: 8864cdc896bbc2a9b6eb36b3218fc9ef57908d77
 
 jobs:

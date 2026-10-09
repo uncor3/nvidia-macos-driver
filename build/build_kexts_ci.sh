@@ -22,7 +22,8 @@ mkdir -p "$OBJ" "$OUT/common" "$OUT/NVAccel-15" "$OUT/NVAccel-26"
 kernel_flags=(
   -arch x86_64 -fapple-kext -mkernel -nostdinc -I"$KHDR"
   -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT
-  -DNV_MACOSX -DNV_DARWIN
+  # NVPORT selects its OS-interface-backed Unix implementation via NV_UNIX.
+  -DNV_UNIX -DNV_MACOSX -DNV_DARWIN
   -fno-builtin -fno-common -fno-stack-protector -mno-red-zone
   -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations -O2
 )
