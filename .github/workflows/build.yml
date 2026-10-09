@@ -90,10 +90,15 @@ jobs:
           set -euo pipefail
           test "$(lipo -archs "$RUNNER_TEMP/plugin-out/NVMTLDriver")" = x86_64
           test "$(lipo -archs "$RUNNER_TEMP/translator-target/release/libnvmtl_translate.dylib")" = x86_64
-          strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q NVIDIAShared
-          strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl_nvk_dispatch_sass_v1
-          ! strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl-fps-
-          ! strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl-passtime-request
+          # Read strings completely before checking; grep -q closes pipes early.
+          plugin_strings="$RUNNER_TEMP/plugin-out/NVMTLDriver.strings.txt"
+          strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" > "$plugin_strings"
+          grep -q NVIDIAShared "$plugin_strings"
+          grep -q nvmtl_nvk_dispatch_sass_v1 "$plugin_strings"
+          if grep -q -e nvmtl-fps- -e nvmtl-passtime-request "$plugin_strings"; then
+            echo "ERROR: diagnostic markers remain in the release plug-in" >&2
+            exit 1
+          fi
 
       - name: Build unsigned 1401 app
         env:
