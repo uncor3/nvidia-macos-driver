@@ -207,7 +207,12 @@ link_kext "$OBJ/NVRMAGDC" "$OBJ/NVRMAGDC.o"
 bundle NVRMAGDC "$ROOT/kexts/NVRMAGDC/Info.plist" "$OBJ/NVRMAGDC" "$OUT/common"
 
 for major in 15 26; do
-  tahoe=(); [ "$major" = 26 ] && tahoe=(-DNM_TAHOE)
+  # Bash 3.2 treats empty arrays as unset under set -u. Keep an explicit
+  # compiler flag for both variants; macOS 15 must leave NM_TAHOE undefined.
+  tahoe=(-UNM_TAHOE)
+  if [ "$major" = 26 ]; then
+    tahoe=(-DNM_TAHOE)
+  fi
   compile_cxx "$ROOT/kexts/NVRM/accel/nvrm-accel.cpp" "$OBJ/NVAccel-$major.o" \
     -I"$ROOT/kexts/NVRM/accel" -I"$ROOT/kexts/NVRM/accel/iofam" \
     -I"$ROOT/kexts/NVRM/accel/re" "${tahoe[@]}"
