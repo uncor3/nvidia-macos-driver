@@ -19,6 +19,34 @@ SDK=$(xcrun --sdk macosx --show-sdk-path)
 KHDR="$SDK/System/Library/Frameworks/Kernel.framework/Headers"
 CLANG=$(xcrun -f clang)
 CLANGXX=$(xcrun -f clang++)
+
+# Resolve static kernel-support libraries before the expensive NVIDIA build.
+# Use the selected SDK, or the selected compiler's own library lookup; never
+# silently drop a required library or fall back to unrelated host libraries.
+kernel_support_archives=()
+for library in kmodc++ kmod cc_kext; do
+  archive=$(find "$SDK" -type f -name "lib${library}.a" -print -quit)
+  if [ -z "$archive" ]; then
+    compiler_archive=$("$CLANGXX" -arch x86_64 -isysroot "$SDK" -print-file-name="lib${library}.a")
+    case "$compiler_archive" in
+      /*) [ ! -f "$compiler_archive" ] || archive=$compiler_archive ;;
+    esac
+  fi
+  if [ -z "$archive" ]; then
+    echo "STOP: required kernel-support library lib${library}.a is missing" >&2
+    echo "Selected SDK: $SDK" >&2
+    echo "Selected compiler: $CLANGXX" >&2
+    echo "Available kernel-support candidates:" >&2
+    find "$SDK" \
+      \( -name 'libkmod*' -o -name '*cc_kext*' -o -name '*cpp_kext*' \) -print >&2
+    echo "Use a compatible kernel SDK; do not omit this dependency." >&2
+  fi
+  echo "Kernel-support library: $archive"
+  kernel_support_archives+=("$archive")
+done
+
+exit 2
+
 NV="$OGKM/src/nvidia"
 KMS="$OGKM/src/nvidia-modeset"
 OBJ="$OUT/objects"
@@ -109,8 +137,8 @@ compile_c() {
 }
 link_kext() {
   local exe=$1; shift
-  "$CLANGXX" -arch x86_64 -fapple-kext -nostdlib -Xlinker -kext \
-    -lkmodc++ -lkmod -lcc_kext "$@" -o "$exe"
+  "$CLANGXX" -arch x86_64 -isysroot "$SDK" -fapple-kext -nostdlib -Xlinker -kext \
+    "$@" "${kernel_support_archives[@]}" -o "$exe"
 }
 bundle() {
   local name=$1 plist=$2 exe=$3 dest=$4
