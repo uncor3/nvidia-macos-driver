@@ -20,30 +20,51 @@ KHDR="$SDK/System/Library/Frameworks/Kernel.framework/Headers"
 CLANG=$(xcrun -f clang)
 CLANGXX=$(xcrun -f clang++)
 
-# Resolve static kernel-support libraries before the expensive NVIDIA build.
-# Use the selected SDK, or the selected compiler's own library lookup; never
-# silently drop a required library or fall back to unrelated host libraries.
+# Resolve libraries from the selected Apple SDK, platform and toolchain.
+# Versioned SDK paths and individual libraries may be symbolic links.
+SDK_PLATFORM=$(xcrun --sdk macosx --show-sdk-platform-path)
+CLANG_RESOURCE_DIR=$("$CLANGXX" -print-resource-dir)
+TOOLCHAIN_USR=$(cd "$(dirname "$CLANGXX")/.." && pwd -P)
+library_roots=()
+for directory in "$SDK" "$SDK_PLATFORM/Developer/usr/lib" \
+  "$SDK_PLATFORM/Developer/Library" "$TOOLCHAIN_USR/lib"; do
+  if [ -d "$directory" ]; then library_roots+=("$directory"); fi
+done
+echo "Selected SDK: $SDK"
+ls -ld "$SDK"
+echo "Selected platform: $SDK_PLATFORM"
+echo "Compiler resource directory: $CLANG_RESOURCE_DIR"
+printf 'Library search root: %s\n' "${library_roots[@]}"
+
 kernel_support_archives=()
+missing_libraries=0
 for library in kmodc++ kmod cc_kext; do
-  archive=$(find "$SDK" -type f -name "lib${library}.a" -print -quit)
-  if [ -z "$archive" ]; then
-    compiler_archive=$("$CLANGXX" -arch x86_64 -isysroot "$SDK" -print-file-name="lib${library}.a")
-    case "$compiler_archive" in
-      /*) [ ! -f "$compiler_archive" ] || archive=$compiler_archive ;;
-    esac
+  if [ "$library" = cc_kext ]; then
+    # Clang's Darwin runtime replaces the historical libcc_kext.a.
+    archive="$CLANG_RESOURCE_DIR/lib/darwin/libclang_rt.cc_kext.a"
+    if [ ! -f "$archive" ]; then archive=; fi
+    library_filename=libclang_rt.cc_kext.a
+  else
+    library_filename="lib${library}.a"
+    archive=$(find -L "${library_roots[@]}" -type f -name "$library_filename" -print -quit)
   fi
   if [ -z "$archive" ]; then
-    echo "STOP: required kernel-support library lib${library}.a is missing" >&2
-    echo "Selected SDK: $SDK" >&2
-    echo "Selected compiler: $CLANGXX" >&2
-    echo "Available kernel-support candidates:" >&2
-    find "$SDK" \
-      \( -name 'libkmod*' -o -name '*cc_kext*' -o -name '*cpp_kext*' \) -print >&2
-    echo "Use a compatible kernel SDK; do not omit this dependency." >&2
+    echo "Missing from selected Apple SDK/platform/toolchain: $library_filename" >&2
+    missing_libraries=1
+    continue
   fi
+  lipo "$archive" -verify_arch x86_64
   echo "Kernel-support library: $archive"
   kernel_support_archives+=("$archive")
 done
+
+if [ "$missing_libraries" = 1 ]; then
+  echo "Available kernel-support candidates (following symlinks):" >&2
+  find -L "${library_roots[@]}" \
+    \( -name 'libkmod*' -o -name '*cc_kext*' -o -name '*cpp_kext*' \) -print >&2
+  echo "STOP: could not resolve all kernel-support libraries; inspect the paths above." >&2
+  exit 2
+fi
 
 exit 2
 
