@@ -1,0 +1,21 @@
+diff --git a/src/common/inc/nvVer.h b/src/common/inc/nvVer.h
+--- a/src/common/inc/nvVer.h
++++ b/src/common/inc/nvVer.h
+@@ -9,6 +9,6 @@
+ #if defined(NV_LINUX) || defined(NV_BSD) || defined(NV_SUNOS) || defined(NV_VMWARE) || defined(NV_QNX) || defined(NV_INTEGRITY) || \
+     (defined(RMCFG_FEATURE_PLATFORM_GSP) && RMCFG_FEATURE_PLATFORM_GSP == 1) || \
+-    defined(NV_DCECORE)
++    defined(NV_DCECORE) || defined(NV_DARWIN)
+ 
+ // All Version numbering for Unix builds has moved.  (Source should be re-directed to directly include that header.)
+ #include "nvUnixVersion.h"
+diff --git a/src/common/inc/nvUnixVersion.h b/src/common/inc/nvUnixVersion.h
+--- a/src/common/inc/nvUnixVersion.h
++++ b/src/common/inc/nvUnixVersion.h
+@@ -4,5 +4,5 @@
+ #if defined(NV_LINUX) || defined(NV_BSD) || defined(NV_SUNOS) || defined(NV_VMWARE) || defined(NV_QNX) || defined(NV_INTEGRITY) || \
+     (defined(RMCFG_FEATURE_PLATFORM_GSP) && RMCFG_FEATURE_PLATFORM_GSP == 1) || \
+-    defined(NV_DCECORE)
++    defined(NV_DCECORE) || defined(NV_DARWIN)
+ 
+ #define NV_VERSION_STRING               "610.57.04"

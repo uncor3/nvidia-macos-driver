@@ -49,6 +49,14 @@ jobs:
           actual=$(git -C .deps/open-gpu-kernel-modules rev-parse HEAD)
           test "$actual" = "$OGKM_COMMIT"
 
+      - name: Apply Darwin version-header compatibility patch
+        run: |
+          set -euo pipefail
+          git -C .deps/open-gpu-kernel-modules apply --check \
+            "$GITHUB_WORKSPACE/build/patches/ogkm-darwin-version.patch"
+          git -C .deps/open-gpu-kernel-modules apply \
+            "$GITHUB_WORKSPACE/build/patches/ogkm-darwin-version.patch"
+
       - name: Build unsigned kexts
         env:
           OGKM: ${{ github.workspace }}/.deps/open-gpu-kernel-modules

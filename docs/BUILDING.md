@@ -10,6 +10,8 @@ Run **Build unsigned** (`.github/workflows/build.yml`). It builds the repository
 
 Run **Build kexts** (`.github/workflows/build-kexts.yml`). It builds the kexts against the pinned NVIDIA open-gpu-kernel-modules source. Its artifact is named `nullmoth-kexts-<commit>`.
 
+Before compiling, the workflow applies `build/patches/ogkm-darwin-version.patch` to the pinned NVIDIA checkout. This narrowly allows `NV_DARWIN` in the platform guards of `nvVer.h` and `nvUnixVersion.h`, preserving NVIDIA's own version metadata without enabling Linux-specific code. Direct use of `build/build_kexts_ci.sh` requires the same patch in its `OGKM` tree. This addresses the observed version-header errors; the complete kext build and hardware behavior still require validation.
+
 ## 3. User-space runtime and firmware
 
 Run **Build source runtime** (`.github/workflows/build-runtime.yml`), either through the manual `build.yml` run or directly. The job:

@@ -9,8 +9,8 @@ JOBS=${JOBS:-3}
 
 version=$(awk '/^NVIDIA_VERSION[[:space:]]*=/{print $3; exit}' "$OGKM/version.mk")
 [ "$version" = 610.57.04 ] || { echo "STOP: OGKM 610.57.04 required, found ${version:-unknown}" >&2; exit 2; }
-# NVIDIA's Unix version header excludes Darwin. Verify its metadata before
-# supplying the version macro directly, without enabling another OS's code.
+# Verify NVIDIA's version metadata; CI patches the version-header platform
+# guards to accept NV_DARWIN without enabling another OS's code.
 header_version=$(awk '/^#define[[:space:]]+NV_VERSION_STRING[[:space:]]+/{gsub(/"/, "", $3); print $3; exit}' \
   "$OGKM/src/common/inc/nvUnixVersion.h")
 [ "$header_version" = "$version" ] || { echo "STOP: NVIDIA version header disagrees with version.mk" >&2; exit 2; }
@@ -29,8 +29,6 @@ kernel_flags=(
   -DKERNEL -DKERNEL_PRIVATE -DDRIVER_PRIVATE -DAPPLE -DNeXT
   # NVPORT selects its OS-interface-backed Unix implementation via NV_UNIX.
   -DNV_UNIX -DNV_MACOSX -DNV_DARWIN
-  # nvVer.h does not expose this metadata for Darwin.
-  "-DNV_VERSION_STRING=\"$version\""
   -fno-builtin -fno-common -fno-stack-protector -mno-red-zone
   -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations -O2
 )
