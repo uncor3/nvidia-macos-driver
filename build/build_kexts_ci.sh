@@ -66,7 +66,7 @@ if [ "$missing_libraries" = 1 ]; then
   exit 2
 fi
 
-exit 2
+# exit 2
 
 NV="$OGKM/src/nvidia"
 KMS="$OGKM/src/nvidia-modeset"
