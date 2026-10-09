@@ -70,9 +70,12 @@ make -C "$NV" -f Makefile -f "$ROOT/build/ogkm-darwin.mk" darwin-archive -j"$JOB
   TARGET_OS=Darwin TARGET_ARCH=x86_64 CC="$CLANG" CXX="$CLANGXX" \
   NV_BUILD_USER=github NV_BUILD_HOST=actions NV_AUTO_DEPEND=0 \
   EXTRA_CFLAGS="$extra_flags" DARWIN_ARCHIVE="$OBJ/libnvkernel.a"
+# Override before NVIDIA creates its build-ID dependencies, which otherwise
+# pull in ELF shader objects even when the archive itself filters them out.
+# nvkms_shaders.cpp supplies these shader blobs as Mach-O data instead.
 make -C "$KMS" -f Makefile -f "$ROOT/build/ogkm-darwin.mk" darwin-archive -j"$JOBS" \
   TARGET_OS=Darwin TARGET_ARCH=x86_64 CC="$CLANG" CXX="$CLANGXX" \
-  NV_BUILD_USER=github NV_BUILD_HOST=actions NV_AUTO_DEPEND=0 \
+  NV_BUILD_USER=github NV_BUILD_HOST=actions NV_AUTO_DEPEND=0 SHADER_OBJS= \
   EXTRA_CFLAGS="$extra_flags" DARWIN_ARCHIVE="$OBJ/libnvmodeset.a"
 
 compile_cxx() {
