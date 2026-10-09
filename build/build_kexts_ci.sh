@@ -141,10 +141,27 @@ make -C "$NV" -f Makefile -f "$ROOT/build/ogkm-darwin.mk" darwin-archive -j"$JOB
 # Override before NVIDIA creates its build-ID dependencies, which otherwise
 # pull in ELF shader objects even when the archive itself filters them out.
 # nvkms_shaders.cpp supplies these shader blobs as Mach-O data instead.
+# Both NVIDIA components compile nvstatus.c. Our single NVRM kext force-loads
+# both archives, so retain only the kernel archive's nvstatusToString definition.
 make -C "$KMS" -f Makefile -f "$ROOT/build/ogkm-darwin.mk" darwin-archive -j"$JOBS" \
   TARGET_OS=Darwin TARGET_ARCH=x86_64 CC="$CLANG" CXX="$CLANGXX" \
   NV_BUILD_USER=github NV_BUILD_HOST=actions NV_AUTO_DEPEND=0 SHADER_OBJS= \
+  DARWIN_EXCLUDE_SRCS=../common/shared/nvstatus/nvstatus.c \
   EXTRA_CFLAGS="$extra_flags" DARWIN_ARCHIVE="$OBJ/libnvmodeset.a"
+
+# Check actual archive definitions before linking; do not suppress duplicates.
+for archive_name in libnvkernel libnvmodeset; do
+  expected=0
+  if [ "$archive_name" = libnvkernel ]; then expected=1; fi
+  /usr/bin/nm -gU "$OBJ/$archive_name.a" > "$OBJ/$archive_name.defined-symbols.txt"
+  count=$(awk '$NF == "_nvstatusToString" { n++ } END { print n+0 }' \
+    "$OBJ/$archive_name.defined-symbols.txt")
+  echo "$archive_name.a: $count nvstatusToString definition(s); expected $expected"
+  if [ "$count" -ne "$expected" ]; then
+    echo "STOP: unexpected nvstatusToString ownership in $archive_name.a" >&2
+    exit 2
+  fi
+done
 
 compile_cxx() {
   local src=$1 out=$2; shift 2
