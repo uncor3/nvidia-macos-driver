@@ -1,0 +1,140 @@
+name: Build unsigned source components
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unsigned-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_VERSION: 1.87.0
+  VULKAN_HEADERS_COMMIT: 8864cdc896bbc2a9b6eb36b3218fc9ef57908d77
+
+jobs:
+  build:
+    name: Build unsigned x86_64 components
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Record toolchain
+        run: |
+          set -euo pipefail
+          sw_vers
+          uname -m
+          test "$(uname -m)" = x86_64
+          xcodebuild -version
+          xcrun clang --version
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustup target add x86_64-unknown-uefi
+
+      - name: Fetch pinned Vulkan headers
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/Vulkan-Headers"
+          git -C "$RUNNER_TEMP/Vulkan-Headers" remote add origin https://github.com/KhronosGroup/Vulkan-Headers.git
+          git -C "$RUNNER_TEMP/Vulkan-Headers" fetch --depth=1 origin "$VULKAN_HEADERS_COMMIT"
+          git -C "$RUNNER_TEMP/Vulkan-Headers" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/Vulkan-Headers" rev-parse HEAD)" = "$VULKAN_HEADERS_COMMIT"
+
+      - name: Build shader translator
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/src --remap-path-prefix=$HOME=/build"
+          cargo build --locked --release \
+            --manifest-path translator/wrapper/Cargo.toml \
+            --target-dir "$RUNNER_TEMP/translator-target"
+          install_name_tool -id @rpath/libnvmtl_translate.dylib \
+            "$RUNNER_TEMP/translator-target/release/libnvmtl_translate.dylib"
+          strip -S "$RUNNER_TEMP/translator-target/release/libnvmtl_translate.dylib"
+
+      - name: Build Metal plug-in executable
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/plugin-out"
+          xcrun clang -arch x86_64 -bundle -fobjc-arc -O1 -DNVMTL_RELEASE=1 \
+            -Wno-protocol -Wno-incomplete-implementation \
+            -I"$RUNNER_TEMP/Vulkan-Headers/include" \
+            -o "$RUNNER_TEMP/plugin-out/NVMTLDriver" plugin/NVMTLDevice.m \
+            -framework Foundation -framework Metal -framework IOSurface
+
+      - name: Build recovery EFI tool
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/src --remap-path-prefix=$HOME=/build"
+          cargo build --locked --release \
+            --manifest-path app/efi-safe/Cargo.toml \
+            --target x86_64-unknown-uefi \
+            --target-dir "$RUNNER_TEMP/efi-target"
+          cp "$RUNNER_TEMP/efi-target/x86_64-unknown-uefi/release/nullmoth-safe.efi" \
+            app/Resources/NullMothSafe.efi
+
+      - name: Verify built binaries without loading them
+        run: |
+          set -euo pipefail
+          test "$(lipo -archs "$RUNNER_TEMP/plugin-out/NVMTLDriver")" = x86_64
+          test "$(lipo -archs "$RUNNER_TEMP/translator-target/release/libnvmtl_translate.dylib")" = x86_64
+          strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q NVIDIAShared
+          strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl_nvk_dispatch_sass_v1
+          ! strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl-fps-
+          ! strings -a "$RUNNER_TEMP/plugin-out/NVMTLDriver" | grep -q nvmtl-passtime-request
+
+      - name: Build unsigned 1401 app
+        env:
+          SIGN_IDENTITY: ""
+        run: |
+          set -euo pipefail
+          app/build.sh "$RUNNER_TEMP/app-out"
+          test ! -e "$RUNNER_TEMP/app-out/1401.app/Contents/_CodeSignature"
+
+      - name: Stage artifact and checksums
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/unsigned-components"
+          mkdir -p "$out/bin"
+          cp "$RUNNER_TEMP/translator-target/release/libnvmtl_translate.dylib" "$out/bin/"
+          cp "$RUNNER_TEMP/plugin-out/NVMTLDriver" "$out/bin/"
+          cp "$RUNNER_TEMP/efi-target/x86_64-unknown-uefi/release/nullmoth-safe.efi" "$out/bin/NullMothSafe.efi"
+          ditto "$RUNNER_TEMP/app-out/1401.app" "$out/1401.app"
+          {
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "commit=$GITHUB_SHA"
+            echo "runner=${ImageOS:-unknown}-${ImageVersion:-unknown}"
+            echo "rust=$RUST_VERSION"
+            echo "vulkan_headers_commit=$VULKAN_HEADERS_COMMIT"
+            echo "signed=no"
+            echo "installable_driver_package=no"
+          } > "$out/BUILD-MANIFEST.txt"
+          (
+            cd "$out"
+            find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | \
+              while IFS= read -r file; do shasum -a 256 "$file"; done
+          ) > "$out/SHA256SUMS"
+
+      - name: Upload unsigned artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nullmoth-unsigned-${{ github.sha }}
+          path: ${{ runner.temp }}/unsigned-components
+          if-no-files-found: error
+          retention-days: 14
+
+  runtime:
+    name: Build source runtime
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/build-runtime.yml

@@ -2,6 +2,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 OUT=${1:-build}; APP=$OUT/1401.app
+APP_VERSION=${APP_VERSION:-1.0.14}
+APP_BUILD=${APP_BUILD:-15}
+DRIVER_VERSION=${DRIVER_VERSION:-1.0.9}
+DRIVER_ARCHIVE=${DRIVER_ARCHIVE:-nullmoth-nvidia-$DRIVER_VERSION.tar.gz}
+DRIVER_URL=${DRIVER_URL:-https://github.com/nullmoth/nvidia-macos-driver/releases/download/v1.0.13/$DRIVER_ARCHIVE}
+DRIVER_SHA256=${DRIVER_SHA256:-9dbfdb1b1359e2ef4166a46905ee195774b0b4ba20be083a8111ef550b1e5789}
+case "$APP_VERSION:$APP_BUILD:$DRIVER_VERSION:$DRIVER_SHA256" in
+  *[!0-9A-Za-z._:-]*) echo "STOP: invalid app/package metadata" >&2; exit 2;;
+esac
+[ "${#DRIVER_SHA256}" -eq 64 ] || { echo "STOP: DRIVER_SHA256 must be 64 lowercase hexadecimal characters" >&2; exit 2; }
+case "$DRIVER_SHA256" in *[!0-9a-f]*) echo "STOP: DRIVER_SHA256 must be lowercase hexadecimal" >&2; exit 2;; esac
 [ -f Resources/NullMothSafe.efi ] || { echo "STOP: Resources/NullMothSafe.efi missing (build efi-safe first)"; exit 1; }
 SDK=$(xcrun --sdk macosx --show-sdk-path)
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -26,13 +37,21 @@ cat > "$APP/Contents/Info.plist" <<PL
 <key>CFBundleName</key><string>1401</string>
 <key>CFBundleDisplayName</key><string>1401</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0.14</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
+<key>CFBundleVersion</key><string>$APP_BUILD</string>
+<key>NullMothDriverVersion</key><string>$DRIVER_VERSION</string>
+<key>NullMothDriverArchive</key><string>$DRIVER_ARCHIVE</string>
+<key>NullMothDriverURL</key><string>$DRIVER_URL</string>
+<key>NullMothDriverSHA256</key><string>$DRIVER_SHA256</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHumanReadableCopyright</key><string>© 2026 NullMoth Systems</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppleEventsUsageDescription</key><string>1401 asks macOS for your password to install the driver, and to restart when you click Restart.</string>
 </dict></plist>
 PL
-codesign --force --deep -s - "$APP"
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  codesign --force --deep --sign "$SIGN_IDENTITY" "$APP"
+else
+  echo "leaving $APP unsigned (set SIGN_IDENTITY to sign it)"
+fi
 echo "built $APP ($(du -sh "$APP" | cut -f1))"

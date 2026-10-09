@@ -1,0 +1,103 @@
+name: Build unsigned kexts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kext-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OGKM_COMMIT: e4a5faa2567f28c8eabe0ebb6422b6d0abcf37eb
+
+jobs:
+  build:
+    name: Build four x86_64 kext bundles
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Record toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          sw_vers
+          xcodebuild -version
+          xcrun clang --version
+
+      - name: Check out pinned NVIDIA OS-independent source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: NVIDIA/open-gpu-kernel-modules
+          ref: ${{ env.OGKM_COMMIT }}
+          path: .deps/open-gpu-kernel-modules
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify NVIDIA revision
+        run: |
+          set -euo pipefail
+          actual=$(git -C .deps/open-gpu-kernel-modules rev-parse HEAD)
+          test "$actual" = "$OGKM_COMMIT"
+
+      - name: Build unsigned kexts
+        env:
+          OGKM: ${{ github.workspace }}/.deps/open-gpu-kernel-modules
+          JOBS: "3"
+        run: |
+          set -euo pipefail
+          chmod +x build/build_kexts_ci.sh
+          build/build_kexts_ci.sh "$RUNNER_TEMP/kexts"
+
+      - name: Validate bundles without loading them
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/kexts"
+          for pair in \
+            "common/NVRM com.nullmoth.NVRM" \
+            "common/NVRMFB com.nullmoth.NVRMFB" \
+            "common/NVRMAGDC com.nullmoth.NVRMAGDC" \
+            "NVAccel-15/NVAccel com.nullmoth.NVAccel" \
+            "NVAccel-26/NVAccel com.nullmoth.NVAccel"; do
+            set -- $pair
+            bundle="$root/$1.kext"
+            exe="$bundle/Contents/MacOS/$(basename "$1")"
+            test -f "$exe"
+            plutil -lint "$bundle/Contents/Info.plist"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Info.plist")" = "$2"
+            test "$(lipo -archs "$exe")" = x86_64
+            file "$exe" | grep -q 'Mach-O 64-bit.*x86_64'
+          done
+          nm -u "$root/common/NVRM.kext/Contents/MacOS/NVRM" | LC_ALL=C sort > "$root/NVRM-undefined.txt"
+          nm -u "$root/NVAccel-15/NVAccel.kext/Contents/MacOS/NVAccel" | LC_ALL=C sort > "$root/NVAccel-15-undefined.txt"
+          nm -u "$root/NVAccel-26/NVAccel.kext/Contents/MacOS/NVAccel" | LC_ALL=C sort > "$root/NVAccel-26-undefined.txt"
+
+      - name: Add checksums
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/kexts"
+          {
+            echo "source_commit=$GITHUB_SHA"
+            echo "ogkm_commit=$OGKM_COMMIT"
+            echo "signed=no"
+          } > BUILD-MANIFEST.txt
+          find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | while IFS= read -r file; do
+            shasum -a 256 "$file"
+          done > SHA256SUMS
+
+      - name: Upload unsigned kext artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nullmoth-kexts-${{ github.sha }}
+          path: ${{ runner.temp }}/kexts
+          if-no-files-found: error
+          retention-days: 14

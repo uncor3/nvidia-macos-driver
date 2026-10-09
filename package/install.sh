@@ -105,11 +105,14 @@ done
 chown -R root:wheel /Library/NullMoth/kexts && chmod -R go-w /Library/NullMoth/kexts || die "cached accelerator permissions"
 echo "$MAJ" > /Library/NullMoth/os-major || die "record selected OS"
 mkdir -p "$GB" "$FW" || die "create bundle and firmware directories"
-for b in NVMTLDriver.bundle NVIDIAShared.bundle nvmtl; do rm -rf "$GB/$b" && ditto "$HERE/Library/GPUBundles/$b" "$GB/$b" || die "copy $b (restore from $BK)"; done
+# Remove an opaque vendor-compiler bundle left by an older installation. It is
+# backed up above and rollback will restore it if this transaction fails.
+rm -rf "$GB/NVIDIAShared.bundle" || die "remove legacy NVIDIAShared.bundle (restore from $BK)"
+for b in NVMTLDriver.bundle nvmtl; do rm -rf "$GB/$b" && ditto "$HERE/Library/GPUBundles/$b" "$GB/$b" || die "copy $b (restore from $BK)"; done
 cp "$HERE/Library/GPUBundles/nvmtl-allow.txt" "$GB/" || die "copy bundle allow list"
 ditto "$HERE/Users/Shared/nvfw" "$FW" || die "copy firmware"
 for k in $KEXTS; do chown -R root:wheel "$EXT/$k.kext" && chmod -R 755 "$EXT/$k.kext" || die "permissions for $k"; done
-chown -R root:wheel "$GB/NVMTLDriver.bundle" "$GB/NVIDIAShared.bundle" "$GB/nvmtl" "$GB/nvmtl-allow.txt" && chmod -R a+rX "$FW" || die "bundle or firmware permissions"
+chown -R root:wheel "$GB/NVMTLDriver.bundle" "$GB/nvmtl" "$GB/nvmtl-allow.txt" && chmod -R a+rX "$FW" || die "bundle or firmware permissions"
 NEWKC="$KC.nullmoth-install-new"; rm -f "$NEWKC"
 kmutil create -n aux --volume-root / ${KARG[@]+"${KARG[@]}"} -B $KB -S $KS --repository "$EXT" -A "$NEWKC" -z >"$T/kmutil2.log" 2>&1 || die "live kernel collection build failed (restore from $BK)"
 [ -s "$NEWKC" ] || die "live kernel collection build produced no output (restore from $BK)"

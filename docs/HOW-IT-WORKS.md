@@ -68,8 +68,11 @@ to, into SPIR-V that NVK can compile. It is based on metal2vulkan (LGPL-3.0).
 **NVK** (`/Library/GPUBundles/nvmtl/`) is Mesa's Vulkan driver for NVIDIA plus the NAK shader compiler, patched to run
 on macOS against NVRM instead of the Linux DRM interface (`nvk/nvk-macos.patch` on Mesa `17ca6174`).
 
-**NVIDIAShared.bundle** carries NVIDIA's NVVM compiler libraries and `air2nvvm.py`, the AIR to NVVM path. The
-plugin's MPS convolution fast path is `plugin/nvconv.metal`.
+**NVIDIAShared.bundle** is an optional vendor-compiler interface. When `NVMTL_VENDOR_COMPILER` is present,
+`plugin/NVMTLVendorCompiler.m` can load it and request `MTLCompilerCreate` and `NVSCompileAIRText`. Its source and a
+reproducible recipe are not in this repository, and no checked-in code invokes a file named `air2nvvm.py`, so the
+source-build packages omit it. The normal AIR -> SPIR-V -> NVK/NAK path above does not require it. See
+[`NVIDIA-SHARED.md`](NVIDIA-SHARED.md). The plugin's MPS convolution fast path is `plugin/nvconv.metal`.
 
 ## 4. OpenCore settings the driver needs
 

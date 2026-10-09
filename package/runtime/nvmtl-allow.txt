@@ -1,0 +1,2 @@
+# Allow Metal clients only after NVAccel reports that the GPU is armed.
+!*

@@ -130,11 +130,17 @@ sudo ./uninstall.sh && sudo shutdown -r now
 
 Requires Xcode 16, Rust (stable), Meson/Ninja, and NVIDIA's `open-gpu-kernel-modules` at tag `610.57.04`.
 
+See [`docs/BUILDING.md`](docs/BUILDING.md) before building. GitHub Actions builds the repository components, kexts,
+patched NVK runtime, and Vulkan loader from pinned source revisions. It obtains only the required binary firmware from
+NVIDIA's official, checksum-pinned 610.57.04 package. A manual packaging workflow accepts only successful artifacts
+from the same source commit, then emits the hand-install tarball, app ZIP, and DMG. The unreproducible optional
+`NVIDIAShared.bundle` is not included.
+
 ```bash
 build/build_xlate.sh       # translator  -> libnvmtl_translate.dylib
 RELEASE=1 build/build_plugin.sh   # plugin -> NVMTLDriver.bundle (RELEASE=1 strips every diagnostic)
-build/build263.sh          # NVK: apply nvk/nvk-macos.patch to Mesa 17ca6174 first
-build/accel_build.sh <src> <out>  # kexts
+build/build_runtime_ci.sh  # CI: patched NVK + Vulkan loader from pinned checkouts
+build/accel_build.sh <src> <out>  # NVAccel.kext only; see docs/BUILDING.md for the missing kext recipes
 ```
 
 ## License

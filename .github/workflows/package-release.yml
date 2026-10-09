@@ -1,0 +1,149 @@
+name: Package unsigned release
+
+on:
+  workflow_dispatch:
+    inputs:
+      components_run_id:
+        description: Successful build.yml run ID
+        required: true
+        type: string
+      runtime_run_id:
+        description: Runtime run ID (same as build.yml ID when built together)
+        required: true
+        type: string
+      kexts_run_id:
+        description: Successful build-kexts.yml run ID
+        required: true
+        type: string
+      version:
+        description: Package version, for example 1.0.14
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMPONENTS_RUN_ID: ${{ inputs.components_run_id }}
+      RUNTIME_RUN_ID: ${{ inputs.runtime_run_id }}
+      KEXTS_RUN_ID: ${{ inputs.kexts_run_id }}
+      PACKAGE_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Resolve and validate source runs
+        id: runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$COMPONENTS_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RUNTIME_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$KEXTS_RUN_ID" =~ ^[0-9]+$ ]]
+          repository="repos/$GITHUB_REPOSITORY/actions/runs"
+          component_json=$(gh api "$repository/$COMPONENTS_RUN_ID")
+          runtime_json=$(gh api "$repository/$RUNTIME_RUN_ID")
+          kext_json=$(gh api "$repository/$KEXTS_RUN_ID")
+
+          component_sha=$(jq -r .head_sha <<<"$component_json")
+          runtime_sha=$(jq -r .head_sha <<<"$runtime_json")
+          kext_sha=$(jq -r .head_sha <<<"$kext_json")
+          test "$(jq -r .conclusion <<<"$component_json")" = success
+          test "$(jq -r .conclusion <<<"$runtime_json")" = success
+          test "$(jq -r .conclusion <<<"$kext_json")" = success
+          test "$component_sha" = "$runtime_sha"
+          test "$component_sha" = "$kext_sha"
+          echo "source_sha=$component_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the exact packaged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.runs.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Validate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PACKAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+
+      - name: Download unsigned components
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$COMPONENTS_RUN_ID" \
+            --name "nullmoth-unsigned-${{ steps.runs.outputs.source_sha }}" \
+            --dir "$RUNNER_TEMP/components"
+
+      - name: Download source-built runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$RUNTIME_RUN_ID" \
+            --name "nullmoth-runtime-${{ steps.runs.outputs.source_sha }}" \
+            --dir "$RUNNER_TEMP/runtime"
+
+      - name: Download kexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$KEXTS_RUN_ID" \
+            --name "nullmoth-kexts-${{ steps.runs.outputs.source_sha }}" \
+            --dir "$RUNNER_TEMP/kexts"
+
+      - name: Verify runtime provenance
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.runs.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/runtime"
+          shasum -a 256 -c SHA256SUMS
+          grep -Fx "source_commit=$SOURCE_SHA" BUILD-MANIFEST.txt
+          grep -Fx "mesa_commit=17ca6174dcc6cb22059ac343bc29f8af7800f42e" BUILD-MANIFEST.txt
+          grep -Fx "ogkm_commit=e4a5faa2567f28c8eabe0ebb6422b6d0abcf37eb" BUILD-MANIFEST.txt
+          grep -Fx "vulkan_loader_commit=a9e72c66d5cb79911eb9a9063bf4016dd0a3a123" BUILD-MANIFEST.txt
+          grep -Fx "nvidia_firmware_archive_sha256=83619d878211aadf4c7e1c5de3d2a865c9936fb2dfa5c1b4c3aabccc20c3f283" BUILD-MANIFEST.txt
+          grep -Fx "nvidia_shared_bundle=included-no" BUILD-MANIFEST.txt
+          grep -Fx "signed=no" BUILD-MANIFEST.txt
+
+      - name: Verify component and kext artifacts
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.runs.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/components"
+          shasum -a 256 -c SHA256SUMS
+          grep -Fx "commit=$SOURCE_SHA" BUILD-MANIFEST.txt
+          grep -Fx "signed=no" BUILD-MANIFEST.txt
+          cd "$RUNNER_TEMP/kexts"
+          shasum -a 256 -c SHA256SUMS
+          grep -Fx "source_commit=$SOURCE_SHA" BUILD-MANIFEST.txt
+          grep -Fx "ogkm_commit=e4a5faa2567f28c8eabe0ebb6422b6d0abcf37eb" BUILD-MANIFEST.txt
+          grep -Fx "signed=no" BUILD-MANIFEST.txt
+
+      - name: Stage installable package
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.runs.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          sh build/stage_release.sh \
+            "$RUNNER_TEMP/components" \
+            "$RUNNER_TEMP/kexts" \
+            "$RUNNER_TEMP/runtime" \
+            "$RUNNER_TEMP/release" \
+            "$PACKAGE_VERSION"
+
+      - name: Upload installable unsigned release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nullmoth-release-${{ env.PACKAGE_VERSION }}-${{ steps.runs.outputs.source_sha }}
+          path: ${{ runner.temp }}/release/dist
+          if-no-files-found: error
+          retention-days: 14
