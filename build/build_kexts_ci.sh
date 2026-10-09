@@ -33,6 +33,25 @@ kernel_flags=(
   -Wno-unused-parameter -Wno-unused-function -Wno-deprecated-declarations -O2
 )
 
+# Match the resource-manager definitions in the pinned src/nvidia/Makefile.
+# Keep NVRM and _LANGUAGE_C language-specific (nv-xnu.h handles NVRM in C++).
+# NVPORT otherwise disables itself, leaving PORT_ATOMIC undefined in nv.h.
+rm_defines=(
+  -D__NO_CTYPE -DLOCK_VAL_ENABLED=0
+  -DPORT_ATOMIC_64_BIT_SUPPORTED=1
+  -DPORT_IS_KERNEL_BUILD=1 -DPORT_IS_CHECKED_BUILD=0
+  -DPORT_MODULE_atomic=1 -DPORT_MODULE_core=1 -DPORT_MODULE_cpu=1
+  -DPORT_MODULE_crypto=1 -DPORT_MODULE_debug=1 -DPORT_MODULE_memory=1
+  -DPORT_MODULE_safe=1 -DPORT_MODULE_string=1 -DPORT_MODULE_sync=1
+  -DPORT_MODULE_thread=1 -DPORT_MODULE_time=1 -DPORT_MODULE_util=1
+  -DPORT_MODULE_example=0 -DPORT_MODULE_mmio=0
+  -DRS_STANDALONE=0 -DRS_STANDALONE_TEST=0 -DRS_COMPATABILITY_MODE=1
+  -DRS_PROVIDES_API_STATE=0 -DNV_CONTAINERS_NO_TEMPLATES
+  -DINCLUDE_NVLINK_LIB -DINCLUDE_NVSWITCH_LIB
+  -DNV_PRINTF_STRINGS_ALLOWED=1 -DNV_ASSERT_FAILED_USES_STRINGS=1
+  -DPORT_ASSERT_FAILED_USES_STRINGS=1
+)
+
 rm_includes=(
   -I"$NV/arch/nvalloc/unix/include" -I"$NV/arch/nvalloc/common/inc"
   -I"$NV/arch/nvalloc/common/inc/gsp" -I"$NV/arch/nvalloc/common/inc/deprecated"
@@ -80,12 +99,12 @@ make -C "$KMS" -f Makefile -f "$ROOT/build/ogkm-darwin.mk" darwin-archive -j"$JO
 
 compile_cxx() {
   local src=$1 out=$2; shift 2
-  "$CLANGXX" "${kernel_flags[@]}" "${rm_includes[@]}" "${kms_includes[@]}" \
+  "$CLANGXX" "${kernel_flags[@]}" "${rm_defines[@]}" "${rm_includes[@]}" "${kms_includes[@]}" \
     -I"$ROOT/kexts/NVRM" -std=c++17 -fno-rtti -fno-exceptions "$@" -c "$src" -o "$out"
 }
 compile_c() {
   local src=$1 out=$2; shift 2
-  "$CLANG" "${kernel_flags[@]}" "${rm_includes[@]}" "${kms_includes[@]}" \
+  "$CLANG" "${kernel_flags[@]}" "${rm_defines[@]}" "${rm_includes[@]}" "${kms_includes[@]}" \
     -I"$ROOT/kexts/NVRM" -std=gnu11 -D_LANGUAGE_C -DNVRM "$@" -c "$src" -o "$out"
 }
 link_kext() {
