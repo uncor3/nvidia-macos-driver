@@ -1,20 +1,22 @@
 # Building unsigned artifacts
 
-The GitHub workflows build the installable payload in three independent jobs and then package only artifacts produced from the same source commit. Nothing produced here is signed or notarized.
+Run **Build and package unsigned driver** (`.github/workflows/build.yml`). This is the only workflow: its components, kexts, and runtime jobs build in parallel, and its package job waits for all three to succeed. Every job uses the same source commit. Nothing produced here is signed or notarized.
+
+Pushes to `main`, pull requests, and manual runs all build and package the complete driver. A manual run accepts a package version such as `1.0.14`; automatic runs use `0.0.<run-number>`. There are no separate workflow runs or run IDs to enter.
 
 ## 1. Project components
 
-Run **Build unsigned** (`.github/workflows/build.yml`). It builds the repository-owned Metal driver, AIR-to-SPIR-V translator, EFI helper, and installer application. Its artifact is named `nullmoth-unsigned-<commit>`. A manual run also invokes the source-runtime workflow, so both artifacts normally share one run ID.
+The `build` job builds the repository-owned Metal driver, AIR-to-SPIR-V translator, EFI helper, and installer application. Its intermediate artifact is named `nullmoth-unsigned-<commit>`.
 
 ## 2. Kernel extensions
 
-Run **Build kexts** (`.github/workflows/build-kexts.yml`). It builds the kexts against the pinned NVIDIA open-gpu-kernel-modules source. Its artifact is named `nullmoth-kexts-<commit>`.
+The `kexts` job builds the kexts against the pinned NVIDIA open-gpu-kernel-modules source, including both macOS 15 and 26 NVAccel variants. Its intermediate artifact is named `nullmoth-kexts-<commit>`.
 
 Before compiling, the workflow applies `build/patches/ogkm-darwin-version.patch` to the pinned NVIDIA checkout. This narrowly allows `NV_DARWIN` in the platform guards of `nvVer.h` and `nvUnixVersion.h`, preserving NVIDIA's own version metadata without enabling Linux-specific code. Direct use of `build/build_kexts_ci.sh` requires the same patch in its `OGKM` tree. This addresses the observed version-header errors; the complete kext build and hardware behavior still require validation.
 
 ## 3. User-space runtime and firmware
 
-Run **Build source runtime** (`.github/workflows/build-runtime.yml`), either through the manual `build.yml` run or directly. The job:
+The `runtime` job:
 
 - checks out Mesa at `17ca6174dcc6cb22059ac343bc29f8af7800f42e`;
 - checks out NVIDIA open-gpu-kernel-modules at `e4a5faa2567f28c8eabe0ebb6422b6d0abcf37eb`;
@@ -31,7 +33,32 @@ The runtime artifact is named `nullmoth-runtime-<commit>`.
 
 ## 4. Package
 
-Run **Package unsigned release** (`.github/workflows/package-release.yml`) with the three successful run IDs and a version. The workflow requires all three runs to be successful and to have the same `head_sha`; it verifies every artifact manifest and checksum before staging the package. It emits the hand-install tarball, a 1401 app ZIP, and a DMG containing both the app and the exact checksum-bound driver tarball.
+The `package` job downloads the three intermediate artifacts from its own workflow run and verifies every artifact manifest and checksum before staging the package. It emits the hand-install tarball, a 1401 app ZIP, and a DMG containing both the app and the exact checksum-bound driver tarball. It then extracts the tarball into a temporary directory, verifies the payload checksums and required files, and confirms that the executable install/uninstall scripts match this checkout. It never installs or loads the driver in CI.
+
+Download **`nullmoth-release-<version>-<commit>`** for the complete package. The other three artifacts are intermediate build outputs, not complete installers. The final package uses this run's source-built binaries and official NVIDIA firmware; no binaries are downloaded from nullmoth's releases.
+
+## 5. Manual offline installation
+
+Transfer the final tarball to the target macOS machine. Extract it into a fresh directory, then:
+
+```bash
+tar -xzf nullmoth-nvidia-VERSION.tar.gz
+cd pkgroot
+shasum -a 256 -c SHA256SUMS
+sudo bash ./install.sh
+```
+
+The archive contains `install.sh`, `uninstall.sh`, all four kexts with both NVAccel variants, the Metal/Vulkan runtime and configuration, and NVIDIA firmware. The installer takes its files from this local `pkgroot`, selects the accelerator for the current macOS version, and performs its kernel-collection preflight before installing. Neither installer script downloads anything. No app or DMG is required for manual installation.
+
+Configure OpenCore separately as described in the repository README before rebooting. The kexts are installed into `/Library/Extensions`, not injected through `EFI/OC/Kexts`. The installer does not configure OpenCore for you.
+
+To remove the installed driver, use the same package's script on macOS:
+
+```bash
+sudo bash ./uninstall.sh
+```
+
+Both installation and removal require a reboot. Compilation and package validation do not establish hardware compatibility or successful loading on the target machine.
 
 The result remains unsigned. Installing it still requires the macOS security changes described by the project, and should only be attempted on a disposable/test installation with recovery access.
 
