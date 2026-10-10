@@ -32,6 +32,8 @@ patch -d "$MESA" -p1 -F 0 -N < "$ROOT/nvk/nvk-macos.patch"
 
 # Build mesa_clc and vtn_bindgen2 from the same pinned Mesa source. The final
 # NVK library then consumes these host tools with LLVM disabled in the runtime.
+# With all drivers disabled, Mesa only creates the tool executables when
+# install-mesa-clc is enabled. We still copy them locally rather than install.
 meson setup "$DEPS/mesa-clc-build" "$MESA" \
     --buildtype=release \
     -Dplatforms= \
@@ -41,6 +43,7 @@ meson setup "$DEPS/mesa-clc-build" "$MESA" \
     -Dglx=disabled \
     -Dllvm=enabled \
     -Dmesa-clc=enabled \
+    -Dinstall-mesa-clc=true \
     -Dbuild-tests=false
 meson compile -C "$DEPS/mesa-clc-build" mesa_clc vtn_bindgen2
 MESA_CLC=$(find "$DEPS/mesa-clc-build" -type f -name mesa_clc -print -quit)
