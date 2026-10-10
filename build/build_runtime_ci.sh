@@ -82,7 +82,8 @@ meson setup "$DEPS/nvk-build" "$MESA" \
     "-Dc_args=-ffile-prefix-map=$MESA=/src -ffile-prefix-map=$DEPS=/build" \
     "-Dcpp_args=-ffile-prefix-map=$MESA=/src -ffile-prefix-map=$DEPS=/build" \
     "-Drust_args=--remap-path-prefix=$MESA=/src --remap-path-prefix=$DEPS=/build"
-meson compile -C "$DEPS/nvk-build" src/nouveau/vulkan/libvulkan_nouveau.dylib
+# This is a Ninja output path, as used by build263.sh, not a Meson target name.
+ninja -C "$DEPS/nvk-build" src/nouveau/vulkan/libvulkan_nouveau.dylib
 cp "$DEPS/nvk-build/src/nouveau/vulkan/libvulkan_nouveau.dylib" \
     "$OUT/Library/GPUBundles/nvmtl/libvulkan_nouveau.dylib"
 UNRESOLVED=$(nm -m "$OUT/Library/GPUBundles/nvmtl/libvulkan_nouveau.dylib" \
