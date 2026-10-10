@@ -57,6 +57,9 @@ cp "$RUNTIME/Library/GPUBundles/nvmtl-allow.txt" "$PKG/Library/GPUBundles/nvmtl-
 ditto "$RUNTIME/Users/Shared/nvfw" "$PKG/Users/Shared/nvfw"
 
 # Insert repository-owned binaries built from this commit.
+# Artifact uploads omit empty directories, including the runtime bundle's
+# MacOS directory until its separately built executable is inserted here.
+mkdir -p "$PKG/Library/GPUBundles/NVMTLDriver.bundle/Contents/MacOS"
 cp "$COMPONENTS/bin/NVMTLDriver" "$PKG/Library/GPUBundles/NVMTLDriver.bundle/Contents/MacOS/NVMTLDriver"
 cp "$COMPONENTS/bin/libnvmtl_translate.dylib" "$PKG/Library/GPUBundles/nvmtl/libnvmtl_translate.dylib"
 plutil -replace CFBundleShortVersionString -string "$VERSION" \
