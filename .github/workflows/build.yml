@@ -319,6 +319,7 @@ jobs:
             PyYAML==6.0.2 \
             packaging==24.2
           cargo install --locked bindgen-cli --version 0.71.1
+          cargo install --locked cbindgen --version 0.28.0
           echo "$PWD/.deps/venv/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
           echo "LLVM_CONFIG=$(brew --prefix llvm)/bin/llvm-config" >> "$GITHUB_ENV"
@@ -380,6 +381,7 @@ jobs:
             cmake --version
             rustc --version
             bindgen --version
+            cbindgen --version
           } > runtime/BUILD-TOOLS.txt
           cd runtime
           find . -type f ! -name SHA256SUMS -print | LC_ALL=C sort | \
