@@ -312,23 +312,28 @@ jobs:
           brew install cmake ninja llvm spirv-llvm-translator spirv-tools libclc glslang pkg-config
           rustup toolchain install "$RUST_VERSION" --profile minimal
           rustup default "$RUST_VERSION"
+          rustup component add rustfmt --toolchain "$RUST_VERSION"
           python3 -m venv .deps/venv
           .deps/venv/bin/pip install \
             meson==1.7.2 \
             Mako==1.3.10 \
             PyYAML==6.0.2 \
             packaging==24.2
-          cargo install --locked bindgen-cli --version 0.71.1
+          # LLVM 22 requires bindgen's corrected struct-definition lookup.
+          cargo install --locked bindgen-cli --version 0.72.1
           cargo install --locked cbindgen --version 0.28.0
           echo "$PWD/.deps/venv/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
           echo "LLVM_CONFIG=$(brew --prefix llvm)/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix llvm)/lib/pkgconfig:$(brew --prefix spirv-llvm-translator)/lib/pkgconfig:$(brew --prefix spirv-tools)/lib/pkgconfig:$(brew --prefix libclc)/lib/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Build NVK and Vulkan loader from source
         shell: bash
         run: |
           set -euo pipefail
+          bindgen --version --verbose
+          rustfmt --version
           sh build/build_runtime_ci.sh "$PWD/.deps" "$PWD/runtime"
 
       - name: Download pinned NVIDIA firmware package
